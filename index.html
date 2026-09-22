@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GLB Model with Realistic Shadows</title>
+  <style>
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      overflow: hidden; 
+      background: #141419; 
+    }
+    canvas { display: block; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+
+<script>
+  // --- 1. Scene, Camera, Renderer ---
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x181820);
+
+  const camera = new THREE.PerspectiveCamera(
+    50,
+    innerWidth / innerHeight,
+    0.1,
+    100
+  );
+  camera.position.set(2.5, 2.0, 3.2);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+
+  // ✨ เปิดใช้งานระบบเงา (Shadow Map) ✨
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // เงาขอบนุ่ม เนียนตา
+  document.body.appendChild(renderer.domElement);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.target.set(0, 0.5, 0);
+
+  // --- 2. การจัดแสง (Lights & Shadows) ---
+  // แสงโดยรอบ ให้เงาไม่ดำมืดสนิทเกินไป
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+  scene.add(ambientLight);
+
+  // แสงหลัก (Key Light) ทำหน้าที่ส่องสว่างและทอดเงา
+  const mainLight = new THREE.DirectionalLight(0xfff8ee, 1.4);
+  mainLight.position.set(3.5, 6.0, 4.0);
+  mainLight.castShadow = true; // ให้แสงนี้ปล่อยเงา
+
+  // ปรับความละเอียดและความคมของเงา
+  mainLight.shadow.mapSize.width = 2048;
+  mainLight.shadow.mapSize.height = 2048;
+  mainLight.shadow.camera.near = 0.5;
+  mainLight.shadow.camera.far = 15;
+  mainLight.shadow.bias = -0.0005; // ลดรอยเงาหยัก/เส้นเงาแตก (Shadow Acne)
+
+  // ขอบเขตระยะตรวจจับเงา
+  const d = 2.5;
+  mainLight.shadow.camera.left = -d;
+  mainLight.shadow.camera.right = d;
+  mainLight.shadow.camera.top = d;
+  mainLight.shadow.camera.bottom = -d;
+  scene.add(mainLight);
+
+  // แสงสะท้อนฝั่งตรงข้าม (Rim/Fill Light) ช่วยเปิดมิติให้ตัวตู้ ไม่สร้างเงา
+  const fillLight = new THREE.DirectionalLight(0x7799cc, 0.6);
+  fillLight.position.set(-3.5, 2.5, -3.0);
+  scene.add(fillLight);
+
+  // --- 3. พื้นรับเงา (Shadow Receiver Floor) ---
+  const floorGeo = new THREE.PlaneGeometry(20, 20);
+  const floorMat = new THREE.MeshStandardMaterial({ 
+    color: 0x22222c, 
+    roughness: 0.85, 
+    metalness: 0.1 
+  });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0;
+  floor.receiveShadow = true; // ให้พื้นรับเงาตกกระทบ
+  scene.add(floor);
+
+  // เส้นตาราง Grid เล็กน้อยเพื่ออ้างอิงตำแหน่งพื้น
+  const gridHelper = new THREE.GridHelper(10, 20, 0x44445a, 0x2c2c38);
+  gridHelper.position.y = 0.001;
+  scene.add(gridHelper);
+
+  // --- 4. โหลดโมเดล gammer.glb พร้อมเปิดเงาทุกชิ้นส่วน ---
+  const loader = new THREE.GLTFLoader();
+  const modelUrl = 'https://raw.githubusercontent.com/namonx993/lnwnorth_myport_forwork/main/matirials/gammer.glb'; //[cite: 2]
+
+  loader.load(
+    modelUrl,
+    (gltf) => {
+      const model = gltf.scene;
+
+      // คำนวณขอบเขตเพื่อยกตู้ให้วางพอดีบนพื้น (y = 0)
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      // จัดให้อยู่กึ่งกลางระนาบ XZ และยกก้นตู้แตะที่ y = 0 พอดี
+      model.position.x -= center.x;
+      model.position.z -= center.z;
+      model.position.y -= box.min.y;
+
+      // วนเปิดเงาให้ทุก Mesh ภายในตัวโมเดล
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;    // ให้ชิ้นส่วนตัวตู้บังแสงเกิดเงา
+          child.receiveShadow = true; // ให้ชิ้นส่วนรับเงาจากส่วนอื่น เช่น ขอบจอหรือคีย์บอร์ด
+          
+          if (child.material) {
+            child.material.roughness = 0.6; // ปรับความด้าน/มันเงาของพื้นผิว
+          }
+        }
+      });
+
+      scene.add(model);
+      controls.target.set(0, size.y * 0.5, 0); // เล็งเป้ากล้องไปที่กึ่งกลางความสูงของตู้
+      console.log('โหลดโมเดลและเซ็ตระบบเงาสำเร็จ!');
+    },
+    (xhr) => {
+      console.log(`กำลังโหลด: ${(xhr.loaded / xhr.total * 100).toFixed(1)}%`);
+    },
+    (error) => {
+      console.error('เกิดข้อผิดพลาดในการโหลดโมเดล:', error);
+    }
+  );
+
+  // --- 5. Resize Event ---
+  window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  });
+
+  // --- 6. Animation Loop ---
+  function animate() {
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+
+  requestAnimationFrame(animate);
+</script>
+</body>
+</html>
