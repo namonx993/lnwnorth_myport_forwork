@@ -1,152 +1,897 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GLB Model with Realistic Shadows</title>
+  <title>My information 3D - Toon Lightning Terminal</title>
   <style>
-    html, body { 
-      height: 100%; 
-      margin: 0; 
-      overflow: hidden; 
-      background: #141419; 
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #080910;
+      font-family: 'Courier New', Courier, monospace;
     }
-    canvas { display: block; }
+    canvas { display: block; width: 100%; height: 100%; }
+    
+    #hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      color: #00ffcc;
+      background: rgba(8, 12, 18, 0.85);
+      border: 1px solid rgba(0, 255, 204, 0.35);
+      border-radius: 6px;
+      padding: 8px 12px;
+      pointer-events: none;
+      font-size: 11px;
+      line-height: 1.45;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+      user-select: none;
+      z-index: 10;
+      max-width: 380px;
+    }
+    #hud b { color: #55ffee; font-size: 11.5px; }
+
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #00ffcc;
+      font-size: 14px;
+      letter-spacing: 1px;
+      pointer-events: none;
+      text-align: center;
+      line-height: 1.8;
+      background: rgba(8, 12, 18, 0.9);
+      padding: 14px 20px;
+      border: 1px solid rgba(0, 255, 204, 0.3);
+      border-radius: 8px;
+      z-index: 20;
+    }
   </style>
+
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 
-<script>
-  // --- 1. Scene, Camera, Renderer ---
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x181820);
+<div id="hud">
+  ⚡ <b>TOON ARCADE TERMINAL</b><br>
+  • <b>คลิกจอหน้า:</b> เลื่อนเข้าส่องจอ (เลือกเมนู & กด [ENTER])<br>
+  • <b>คลิกจอข้าง:</b> เลื่อนเข้าส่องโปรไฟล์ (Personnel Dossier)<br>
+  • <b>ถอยมุมมอง:</b> คลิกที่ว่าง หรือกด [ESC] | ลากเมาส์หมุนฉาก 360°
+</div>
 
-  const camera = new THREE.PerspectiveCamera(
-    50,
-    innerWidth / innerHeight,
-    0.1,
-    100
-  );
-  camera.position.set(2.5, 2.0, 3.2);
+<div id="loading">กำลังเตรียมดาวน์โหลดโมเดล...</div>
+
+<script>
+  // ---------------------------------------------------------------------------
+  // 1. SCENE / RENDERER / CAMERA
+  // ---------------------------------------------------------------------------
+  const scene = new THREE.Scene();
+  const defaultBgColor = new THREE.Color(0x080912);
+  scene.background = defaultBgColor.clone();
+  scene.fog = new THREE.FogExp2(0x080912, 0.02);
+
+  const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputEncoding = THREE.sRGBEncoding;
-
-  // ✨ เปิดใช้งานระบบเงา (Shadow Map) ✨
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // เงาขอบนุ่ม เนียนตา
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.target.set(0, 0.5, 0);
+  controls.dampingFactor = 0.05;
 
-  // --- 2. การจัดแสง (Lights & Shadows) ---
-  // แสงโดยรอบ ให้เงาไม่ดำมืดสนิทเกินไป
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 1.35);
   scene.add(ambientLight);
 
-  // แสงหลัก (Key Light) ทำหน้าที่ส่องสว่างและทอดเงา
-  const mainLight = new THREE.DirectionalLight(0xfff8ee, 1.4);
-  mainLight.position.set(3.5, 6.0, 4.0);
-  mainLight.castShadow = true; // ให้แสงนี้ปล่อยเงา
-
-  // ปรับความละเอียดและความคมของเงา
-  mainLight.shadow.mapSize.width = 2048;
-  mainLight.shadow.mapSize.height = 2048;
-  mainLight.shadow.camera.near = 0.5;
-  mainLight.shadow.camera.far = 15;
-  mainLight.shadow.bias = -0.0005; // ลดรอยเงาหยัก/เส้นเงาแตก (Shadow Acne)
-
-  // ขอบเขตระยะตรวจจับเงา
-  const d = 2.5;
-  mainLight.shadow.camera.left = -d;
-  mainLight.shadow.camera.right = d;
-  mainLight.shadow.camera.top = d;
-  mainLight.shadow.camera.bottom = -d;
+  const mainLight = new THREE.DirectionalLight(0xffffff, 1.4);
+  mainLight.position.set(6, 12, 6);
+  mainLight.castShadow = true;
   scene.add(mainLight);
 
-  // แสงสะท้อนฝั่งตรงข้าม (Rim/Fill Light) ช่วยเปิดมิติให้ตัวตู้ ไม่สร้างเงา
-  const fillLight = new THREE.DirectionalLight(0x7799cc, 0.6);
-  fillLight.position.set(-3.5, 2.5, -3.0);
+  const fillLight = new THREE.DirectionalLight(0x7788aa, 0.5);
+  fillLight.position.set(-6, 2, -6);
   scene.add(fillLight);
 
-  // --- 3. พื้นรับเงา (Shadow Receiver Floor) ---
-  const floorGeo = new THREE.PlaneGeometry(20, 20);
-  const floorMat = new THREE.MeshStandardMaterial({ 
-    color: 0x22222c, 
-    roughness: 0.85, 
-    metalness: 0.1 
+  // ---------------------------------------------------------------------------
+  // 2. CARTOON YELLOW LIGHTNING
+  // ---------------------------------------------------------------------------
+  const yellowFlashLight = new THREE.PointLight(0xffea00, 0, 80);
+  yellowFlashLight.position.set(0, 10, -6);
+  scene.add(yellowFlashLight);
+
+  const boltMaterial = new THREE.LineBasicMaterial({
+    color: 0xffee00,
+    linewidth: 5,
+    transparent: true,
+    opacity: 0
   });
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = 0;
-  floor.receiveShadow = true; // ให้พื้นรับเงาตกกระทบ
-  scene.add(floor);
 
-  // เส้นตาราง Grid เล็กน้อยเพื่ออ้างอิงตำแหน่งพื้น
-  const gridHelper = new THREE.GridHelper(10, 20, 0x44445a, 0x2c2c38);
-  gridHelper.position.y = 0.001;
-  scene.add(gridHelper);
+  const glowBoltMaterial = new THREE.LineBasicMaterial({
+    color: 0xff9900,
+    linewidth: 9,
+    transparent: true,
+    opacity: 0
+  });
 
-  // --- 4. โหลดโมเดล gammer.glb พร้อมเปิดเงาทุกชิ้นส่วน ---
-  const loader = new THREE.GLTFLoader();
-  const modelUrl = 'https://raw.githubusercontent.com/namonx993/lnwnorth_myport_forwork/main/matirials/gammer.glb'; //[cite: 2]
+  let lightningGeometry = new THREE.BufferGeometry();
+  const boltLine = new THREE.Line(lightningGeometry, boltMaterial);
+  const glowBoltLine = new THREE.Line(lightningGeometry, glowBoltMaterial);
+  scene.add(boltLine);
+  scene.add(glowBoltLine);
 
-  loader.load(
-    modelUrl,
-    (gltf) => {
-      const model = gltf.scene;
+  let lightningTimer = 0;
+  let nextLightningTime = 2.0;
+  let flashStrength = 0;
 
-      // คำนวณขอบเขตเพื่อยกตู้ให้วางพอดีบนพื้น (y = 0)
-      const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
+  function createCartoonLightningPoints() {
+    const points = [];
+    const startX = (Math.random() - 0.5) * 14;
+    const startY = 16 + Math.random() * 3;
+    const startZ = -7 + (Math.random() - 0.5) * 4;
 
-      // จัดให้อยู่กึ่งกลางระนาบ XZ และยกก้นตู้แตะที่ y = 0 พอดี
-      model.position.x -= center.x;
-      model.position.z -= center.z;
-      model.position.y -= box.min.y;
+    let cur = new THREE.Vector3(startX, startY, startZ);
+    points.push(cur.clone());
 
-      // วนเปิดเงาให้ทุก Mesh ภายในตัวโมเดล
-      model.traverse((child) => {
-        if (child.isMesh) {
-          child.castShadow = true;    // ให้ชิ้นส่วนตัวตู้บังแสงเกิดเงา
-          child.receiveShadow = true; // ให้ชิ้นส่วนรับเงาจากส่วนอื่น เช่น ขอบจอหรือคีย์บอร์ด
-          
-          if (child.material) {
-            child.material.roughness = 0.6; // ปรับความด้าน/มันเงาของพื้นผิว
-          }
+    const segments = 12;
+    const groundY = 0.5;
+    const dy = (startY - groundY) / segments;
+
+    for (let i = 0; i < segments; i++) {
+      cur.y -= dy;
+      cur.x += (Math.random() - 0.5) * 1.8;
+      cur.z += (Math.random() - 0.5) * 0.7;
+      points.push(cur.clone());
+    }
+    return points;
+  }
+
+  function triggerYellowLightning() {
+    const pts = createCartoonLightningPoints();
+    lightningGeometry.dispose();
+    lightningGeometry = new THREE.BufferGeometry().setFromPoints(pts);
+    boltLine.geometry = lightningGeometry;
+    glowBoltLine.geometry = lightningGeometry;
+
+    flashStrength = 1.0;
+    boltMaterial.opacity = 1.0;
+    glowBoltMaterial.opacity = 0.9;
+    yellowFlashLight.position.set(pts[0].x, pts[0].y, pts[0].z);
+  }
+
+  function updateLightningSystem(dt) {
+    lightningTimer += dt;
+    if (lightningTimer > nextLightningTime) {
+      triggerYellowLightning();
+      lightningTimer = 0;
+      nextLightningTime = 2.0 + Math.random() * 3.5;
+    }
+
+    if (flashStrength > 0) {
+      flashStrength -= dt * 4.0;
+      if (flashStrength < 0) flashStrength = 0;
+
+      yellowFlashLight.intensity = flashStrength * 10.0;
+      boltMaterial.opacity = flashStrength;
+      glowBoltMaterial.opacity = flashStrength * 0.7;
+
+      const skyFlash = defaultBgColor.clone().lerp(new THREE.Color(0x3a3518), flashStrength * 0.85);
+      scene.background.copy(skyFlash);
+      scene.fog.color.copy(skyFlash);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3. CEL-OUTLINE MATERIAL
+  // ---------------------------------------------------------------------------
+  const outlineMaterial = new THREE.ShaderMaterial({
+    vertexShader: `
+      uniform float uOutline;
+      void main() {
+        vec3 pos = position + normal * uOutline;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision mediump float;
+      void main() {
+        gl_FragColor = vec4(0.02, 0.04, 0.08, 1.0);
+      }
+    `,
+    uniforms: {
+      uOutline: { value: 0.015 }
+    },
+    side: THREE.BackSide
+  });
+
+  // ---------------------------------------------------------------------------
+  // 4. TARGET LERP SYSTEM
+  // ---------------------------------------------------------------------------
+  let selected_target = null;
+  let targetCamPos = null;
+
+  const defaultOverviewTarget = new THREE.Vector3();
+  const defaultOverviewCamPos = new THREE.Vector3();
+
+  const frontLookTarget = new THREE.Vector3();
+  const frontLookCamPos = new THREE.Vector3();
+
+  const sideLookTarget = new THREE.Vector3();
+  const sideLookCamPos = new THREE.Vector3();
+
+  // ---------------------------------------------------------------------------
+  // 5. HELPER FUNCTIONS: วาดกล่องและข้อความการ์ตูน
+  // ---------------------------------------------------------------------------
+  function drawToonBox(c, x, y, w, h, radius, fillColor, strokeColor, shadowColor = "rgba(0,0,0,0.5)") {
+    if (shadowColor) {
+      c.fillStyle = shadowColor;
+      c.beginPath();
+      c.roundRect(x + 4, y + 4, w, h, radius);
+      c.fill();
+    }
+    c.fillStyle = fillColor;
+    c.beginPath();
+    c.roundRect(x, y, w, h, radius);
+    c.fill();
+    if (strokeColor) {
+      c.strokeStyle = strokeColor;
+      c.lineWidth = 3;
+      c.stroke();
+    }
+  }
+
+  function drawToonText(c, text, x, y, font, fillColor, strokeColor = "#000000", strokeWidth = 4) {
+    c.font = font;
+    if (strokeColor) {
+      c.strokeStyle = strokeColor;
+      c.lineWidth = strokeWidth;
+      c.strokeText(text, x, y);
+    }
+    c.fillStyle = fillColor;
+    c.fillText(text, x, y);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. FRONT SCREEN LOGIC (MENU / SNAKE / EXTRACURRICULAR / HOBBIES)
+  // ---------------------------------------------------------------------------
+  const mainCanvas = document.createElement('canvas');
+  mainCanvas.width = 512;
+  mainCanvas.height = 512;
+  const ctx = mainCanvas.getContext('2d');
+
+  const mainTexture = new THREE.CanvasTexture(mainCanvas);
+  mainTexture.center.set(0.5, 0.5);
+  mainTexture.rotation = Math.PI / 2;
+  mainTexture.wrapS = THREE.RepeatWrapping;
+  mainTexture.wrapT = THREE.RepeatWrapping;
+  mainTexture.repeat.set(-1, 1);
+
+  const frontScreenMat = new THREE.MeshBasicMaterial({
+    map: mainTexture,
+    side: THREE.DoubleSide
+  });
+
+  let currentScreen = 'MENU';
+  let menuSelected = 0;
+  const menuList = [
+    { title: "🎮 PLAY SNAKE GAME", state: "SNAKE" },
+    { title: "🏃 EXTRACURRICULAR ACTIVITIES", state: "EXTRA" },
+    { title: "💡 FAVORITE ACTIVITIES", state: "HOBBIES" }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // 7. SIDE SCREEN (Toon Personnel Dossier)
+  // ---------------------------------------------------------------------------
+  const sideCanvas = document.createElement('canvas');
+  sideCanvas.width = 1024;
+  sideCanvas.height = 576;
+  const ctxS = sideCanvas.getContext('2d');
+
+  const sideTexture = new THREE.CanvasTexture(sideCanvas);
+  sideTexture.center.set(0.5, 0.5);
+  sideTexture.rotation = Math.PI;
+  sideTexture.wrapS = THREE.RepeatWrapping;
+  sideTexture.wrapT = THREE.RepeatWrapping;
+  sideTexture.repeat.set(1, 1);
+
+  const sideScreenMat = new THREE.MeshBasicMaterial({
+    map: sideTexture,
+    side: THREE.DoubleSide
+  });
+
+  function renderSideScreen(time) {
+    ctxS.fillStyle = "#1e1328";
+    ctxS.fillRect(0, 0, 1024, 576);
+
+    ctxS.fillStyle = "rgba(255, 180, 0, 0.08)";
+    for (let x = 0; x < 1024; x += 24) {
+      for (let y = 0; y < 576; y += 24) {
+        ctxS.beginPath();
+        ctxS.arc(x, y, 2.5, 0, Math.PI * 2);
+        ctxS.fill();
+      }
+    }
+
+    ctxS.strokeStyle = "#ffb703";
+    ctxS.lineWidth = 8;
+    ctxS.strokeRect(16, 16, 992, 544);
+    ctxS.strokeStyle = "#000000";
+    ctxS.lineWidth = 2;
+    ctxS.strokeRect(20, 20, 984, 536);
+
+    // เว้นพื้นที่ฝั่งซ้าย (0 - 430px) สำหรับรูปถ่าย
+    drawToonBox(ctxS, 32, 36, 380, 500, 14, "rgba(255,255,255,0.06)", "#ffb703");
+    drawToonText(ctxS, "★ CANDIDATE PHOTO ★", 100, 520, "bold 18px monospace", "#ffd166", "#000000", 3);
+
+    // หัวข้อหลักฝั่งขวา
+    drawToonBox(ctxS, 440, 36, 545, 60, 12, "#ffb703", "#000000");
+    drawToonText(ctxS, "★ PERSONNEL DOSSIER ★", 485, 76, "bold 28px sans-serif", "#ffffff", "#000000", 6);
+
+    const details = [
+      { tag: "NAME", val: "Nithan Amornsillapapitak", color: "#fb8500" },
+      { tag: "UNIVERSITY", val: "Kasetsart University (KPS)", color: "#02c39a" },
+      { tag: "FACULTY", val: "Liberal Arts and Science", color: "#48cae4" },
+      { tag: "MAJOR", val: "Computer Science (B.Sc.)", color: "#f72585" }
+    ];
+
+    let py = 120;
+    details.forEach(item => {
+      drawToonBox(ctxS, 440, py, 545, 64, 10, "#2b1b3d", "#000000");
+      drawToonBox(ctxS, 452, py + 12, 130, 40, 8, item.color, "#000000", null);
+      drawToonText(ctxS, item.tag, 465, py + 38, "bold 15px sans-serif", "#ffffff", "#000000", 3);
+      drawToonText(ctxS, item.val, 595, py + 40, "bold 18px monospace", "#ffffff", "#000000", 4);
+      py += 76;
+    });
+
+    drawToonBox(ctxS, 440, 435, 545, 100, 12, "#180d24", "#000000");
+    drawToonText(ctxS, "⚡ BIOMETRIC STATUS: 100% ONLINE", 460, 465, "bold 16px sans-serif", "#00f5d4", "#000000", 4);
+
+    ctxS.strokeStyle = "#ff007f";
+    ctxS.lineWidth = 4;
+    ctxS.beginPath();
+    for (let x = 460; x <= 950; x += 5) {
+      const wave = Math.sin((x * 0.04) + (time * 0.007)) * 14;
+      const y = 498 + wave;
+      if (x === 460) ctxS.moveTo(x, y);
+      else ctxS.lineTo(x, y);
+    }
+    ctxS.stroke();
+
+    sideTexture.needsUpdate = true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 8. MINI SNAKE GAME
+  // ---------------------------------------------------------------------------
+  const GRID_SIZE = 16;
+  const CELL_PX = 20;
+  const BOARD_X = 96;
+  const BOARD_Y = 125;
+
+  let snake = [{ x: 8, y: 8 }, { x: 7, y: 8 }, { x: 6, y: 8 }];
+  let snakeDir = { x: 1, y: 0 };
+  let nextDir = { x: 1, y: 0 };
+  let food = { x: 12, y: 8 };
+  let snakeScore = 0;
+  let snakeGameOver = false;
+  let lastSnakeMove = 0;
+  const SNAKE_SPEED_MS = 130;
+
+  function resetSnake() {
+    snake = [{ x: 8, y: 8 }, { x: 7, y: 8 }, { x: 6, y: 8 }];
+    snakeDir = { x: 1, y: 0 };
+    nextDir = { x: 1, y: 0 };
+    snakeScore = 0;
+    snakeGameOver = false;
+    spawnFood();
+  }
+
+  function spawnFood() {
+    food = {
+      x: Math.floor(Math.random() * GRID_SIZE),
+      y: Math.floor(Math.random() * GRID_SIZE)
+    };
+  }
+
+  function updateSnake(timestamp) {
+    if (snakeGameOver) return;
+    if (timestamp - lastSnakeMove < SNAKE_SPEED_MS) return;
+    lastSnakeMove = timestamp;
+
+    snakeDir = nextDir;
+    const head = { x: snake[0].x + snakeDir.x, y: snake[0].y + snakeDir.y };
+
+    if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+      snakeGameOver = true;
+      return;
+    }
+    for (let segment of snake) {
+      if (head.x === segment.x && head.y === segment.y) {
+        snakeGameOver = true;
+        return;
+      }
+    }
+
+    snake.unshift(head);
+
+    if (head.x === food.x && head.y === food.y) {
+      snakeScore += 10;
+      spawnFood();
+    } else {
+      snake.pop();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 9. DRAW FRONT SCREEN (MENU, EXTRACURRICULAR, HOBBIES, SNAKE)
+  // ---------------------------------------------------------------------------
+  function renderScreens(time) {
+    ctx.fillStyle = "#181028";
+    ctx.fillRect(0, 0, 512, 512);
+
+    ctx.fillStyle = "rgba(6, 214, 160, 0.08)";
+    for (let x = 0; x < 512; x += 20) {
+      for (let y = 0; y < 512; y += 20) {
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // หน้าเมนูหลัก
+    if (currentScreen === 'MENU') {
+      drawToonBox(ctx, 30, 20, 452, 54, 12, "#06d6a0", "#000000");
+      drawToonText(ctx, "★ MY INFORMATION 3D ★", 50, 56, "bold 24px sans-serif", "#ffffff", "#000000", 5);
+
+      menuList.forEach((item, idx) => {
+        const y = 100 + idx * 74;
+        const isSel = idx === menuSelected;
+        const btnColor = isSel ? "#ffd166" : "#2a1e3f";
+        const txtColor = isSel ? "#181028" : "#ffffff";
+        
+        drawToonBox(ctx, 35, y, 442, 58, 12, btnColor, "#000000");
+        drawToonText(ctx, (isSel ? "▶ " : "  ") + item.title, 48, y + 36, "bold 16px sans-serif", txtColor, isSel ? null : "#000000", 3);
+      });
+
+      drawToonBox(ctx, 35, 345, 442, 90, 10, "#110b1f", "#000000");
+      drawToonText(ctx, "♪ HARMONIC FREQUENCY:", 50, 375, "bold 14px sans-serif", "#ff007f", "#000000", 3);
+
+      ctx.strokeStyle = "#06d6a0";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      for (let x = 50; x <= 460; x += 4) {
+        const wave = Math.sin((x * 0.06) + (time * 0.006)) * 16;
+        const y = 405 + wave;
+        if (x === 50) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      drawToonText(ctx, "👉 PRESS [ENTER] OR CLICK TO OPEN", 80, 480, "bold 15px sans-serif", "#ffd166", "#000000", 4);
+    }
+    // หน้าความสามารถนอกชั้นเรียน (Extracurricular Activities)
+    else if (currentScreen === 'EXTRA') {
+      drawToonBox(ctx, 30, 20, 452, 54, 12, "#fb8500", "#000000");
+      drawToonText(ctx, "★ EXTRACURRICULAR ★", 85, 56, "bold 24px sans-serif", "#ffffff", "#000000", 5);
+
+      drawToonBox(ctx, 40, 100, 432, 85, 12, "#2a1e3f", "#000000");
+      drawToonBox(ctx, 55, 115, 50, 50, 10, "#ffb703", "#000000", null);
+      drawToonText(ctx, "🏋️", 63, 150, "30px sans-serif", "#ffffff", null);
+      drawToonText(ctx, "WORKOUT & FITNESS", 120, 138, "bold 17px sans-serif", "#ffffff", "#000000", 4);
+      drawToonText(ctx, "Daily physical training & gym routines", 120, 162, "13px monospace", "#00f5d4", null);
+
+      drawToonBox(ctx, 40, 205, 432, 85, 12, "#2a1e3f", "#000000");
+      drawToonBox(ctx, 55, 220, 50, 50, 10, "#06d6a0", "#000000", null);
+      drawToonText(ctx, "⚽", 63, 255, "30px sans-serif", "#ffffff", null);
+      drawToonText(ctx, "PLAYING SPORTS", 120, 243, "bold 17px sans-serif", "#ffffff", "#000000", 4);
+      drawToonText(ctx, "Football, futsal & athletic team activities", 120, 267, "13px monospace", "#ffd166", null);
+
+      drawToonBox(ctx, 40, 315, 432, 110, 12, "#110b1f", "#000000");
+      drawToonText(ctx, "★ SKILL PROFILE SUMMARY", 60, 345, "bold 15px sans-serif", "#ff007f", "#000000", 3);
+      drawToonText(ctx, "> Strong stamina & active lifestyle", 60, 375, "14px monospace", "#ffffff", null);
+      drawToonText(ctx, "> Excellent team collaboration spirit", 60, 402, "14px monospace", "#ffffff", null);
+
+      drawToonBox(ctx, 120, 445, 272, 45, 10, "#ef476f", "#000000");
+      drawToonText(ctx, "◀ BACK TO MENU [ESC]", 155, 474, "bold 16px sans-serif", "#ffffff", "#000000", 4);
+    }
+    // หน้าสิ่งที่ชอบทำ (Favorite Activities / Hobbies)
+    else if (currentScreen === 'HOBBIES') {
+      drawToonBox(ctx, 30, 20, 452, 54, 12, "#7209b7", "#000000");
+      drawToonText(ctx, "★ FAVORITE ACTIVITIES ★", 65, 56, "bold 24px sans-serif", "#ffffff", "#000000", 5);
+
+      drawToonBox(ctx, 40, 95, 432, 70, 12, "#2a1e3f", "#000000");
+      drawToonBox(ctx, 52, 105, 48, 48, 10, "#4cc9f0", "#000000", null);
+      drawToonText(ctx, "💻", 58, 140, "28px sans-serif", "#ffffff", null);
+      drawToonText(ctx, "CODING & DEVELOPMENT", 115, 128, "bold 16px sans-serif", "#ffffff", "#000000", 4);
+      drawToonText(ctx, "Three.js, WebGL, algorithms & apps", 115, 150, "12px monospace", "#4cc9f0", null);
+
+      drawToonBox(ctx, 40, 180, 432, 70, 12, "#2a1e3f", "#000000");
+      drawToonBox(ctx, 52, 190, 48, 48, 10, "#f72585", "#000000", null);
+      drawToonText(ctx, "🎨", 58, 225, "28px sans-serif", "#ffffff", null);
+      drawToonText(ctx, "WEBSITE DESIGN", 115, 213, "bold 16px sans-serif", "#ffffff", "#000000", 4);
+      drawToonText(ctx, "Interactive 3D UI & modern aesthetics", 115, 235, "12px monospace", "#f72585", null);
+
+      drawToonBox(ctx, 40, 265, 432, 70, 12, "#2a1e3f", "#000000");
+      drawToonBox(ctx, 52, 275, 48, 48, 10, "#ffd166", "#000000", null);
+      drawToonText(ctx, "🎮", 58, 310, "28px sans-serif", "#ffffff", null);
+      drawToonText(ctx, "GAME STREAMING", 115, 298, "bold 16px sans-serif", "#ffffff", "#000000", 4);
+      drawToonText(ctx, "Live broadcast, gaming entertainment", 115, 320, "12px monospace", "#ffd166", null);
+
+      drawToonBox(ctx, 40, 350, 432, 78, 12, "#110b1f", "#000000");
+      drawToonText(ctx, "PASSION & DRIVER:", 55, 375, "bold 14px sans-serif", "#00f5d4", "#000000", 3);
+      drawToonText(ctx, "\"Building immersive digital experiences.\"", 55, 405, "bold 14px monospace", "#ffffff", null);
+
+      drawToonBox(ctx, 120, 445, 272, 45, 10, "#ef476f", "#000000");
+      drawToonText(ctx, "◀ BACK TO MENU [ESC]", 155, 474, "bold 16px sans-serif", "#ffffff", "#000000", 4);
+    }
+    // หน้าเกมงู
+    else if (currentScreen === 'SNAKE') {
+      updateSnake(time);
+
+      drawToonBox(ctx, 96, 85, 140, 32, 6, "#ffd166", "#000000");
+      drawToonText(ctx, `SCORE: ${snakeScore}`, 108, 107, "bold 16px sans-serif", "#000000", null);
+      drawToonText(ctx, "ARROWS / WASD", 270, 107, "bold 14px sans-serif", "#06d6a0", "#000000", 3);
+
+      drawToonBox(ctx, BOARD_X - 4, BOARD_Y - 4, GRID_SIZE * CELL_PX + 8, GRID_SIZE * CELL_PX + 8, 8, "#0d0718", "#000000");
+
+      const fx = BOARD_X + food.x * CELL_PX;
+      const fy = BOARD_Y + food.y * CELL_PX;
+      ctx.fillStyle = "#ef476f";
+      ctx.beginPath();
+      ctx.arc(fx + CELL_PX/2, fy + CELL_PX/2, CELL_PX/2 - 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      snake.forEach((seg, i) => {
+        const sx = BOARD_X + seg.x * CELL_PX;
+        const sy = BOARD_Y + seg.y * CELL_PX;
+        ctx.fillStyle = i === 0 ? "#06d6a0" : "#118ab2";
+        ctx.beginPath();
+        ctx.roundRect(sx + 1, sy + 1, CELL_PX - 2, CELL_PX - 2, 6);
+        ctx.fill();
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        if (i === 0) {
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(sx + 6, sy + 6, 3, 0, Math.PI * 2);
+          ctx.arc(sx + 14, sy + 6, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#000000";
+          ctx.beginPath();
+          ctx.arc(sx + 6, sy + 6, 1.5, 0, Math.PI * 2);
+          ctx.arc(sx + 14, sy + 6, 1.5, 0, Math.PI * 2);
+          ctx.fill();
         }
       });
 
-      scene.add(model);
-      controls.target.set(0, size.y * 0.5, 0); // เล็งเป้ากล้องไปที่กึ่งกลางความสูงของตู้
-      console.log('โหลดโมเดลและเซ็ตระบบเงาสำเร็จ!');
-    },
-    (xhr) => {
-      console.log(`กำลังโหลด: ${(xhr.loaded / xhr.total * 100).toFixed(1)}%`);
-    },
-    (error) => {
-      console.error('เกิดข้อผิดพลาดในการโหลดโมเดล:', error);
-    }
-  );
+      if (snakeGameOver) {
+        drawToonBox(ctx, BOARD_X + 20, BOARD_Y + 90, GRID_SIZE * CELL_PX - 40, 130, 12, "#ef476f", "#000000");
+        drawToonText(ctx, "💥 GAME OVER! 💥", BOARD_X + 50, BOARD_Y + 145, "bold 24px sans-serif", "#ffffff", "#000000", 5);
+        drawToonText(ctx, "PRESS [SPACE] TO RETRY", BOARD_X + 45, BOARD_Y + 185, "bold 16px sans-serif", "#ffd166", "#000000", 3);
+      }
 
-  // --- 5. Resize Event ---
+      drawToonText(ctx, "◀ PRESS [ESC] TO EXIT", 160, 485, "bold 15px sans-serif", "#ffffff", "#000000", 4);
+    }
+
+    mainTexture.needsUpdate = true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 10. LOAD 3D MODEL (god.glb)
+  // ---------------------------------------------------------------------------
+  let mixer = null;
+  const clock = new THREE.Clock();
+  const loader = new THREE.GLTFLoader();
+  const loadingEl = document.getElementById('loading');
+
+  let frontScreenMesh = null;
+  let sideScreenMesh = null;
+  const clickableObjects = [];
+
+  const candidatePaths = [
+    './god.glb',
+    'god.glb',
+    './matirials/god.glb',
+    'matirials/god.glb',
+    'https://raw.githubusercontent.com/namonx993/lnwnorth_myport_forwork/main/god.glb'
+  ];
+
+  let currentPathIdx = 0;
+
+  function loadModelStep() {
+    if (currentPathIdx >= candidatePaths.length) {
+      loadingEl.innerHTML = '<span style="color:#ff4466;">❌ โหลดโมเดลไม่สำเร็จ</span><br><small style="color:#aaa;">กด F12 ดู Console</small>';
+      return;
+    }
+
+    const path = candidatePaths[currentPathIdx++];
+    loadingEl.innerText = `กำลังโหลดโมเดล: ${path}...`;
+
+    loader.load(
+      path,
+      (gltf) => {
+        loadingEl.style.display = 'none';
+        const model = gltf.scene;
+
+        const allMeshes = [];
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            allMeshes.push(child);
+          }
+        });
+
+        allMeshes.forEach((child) => {
+          const n = (child.name || '').toLowerCase();
+          const mn = (child.material?.name || '').toLowerCase();
+
+          const bbox = new THREE.Box3().setFromObject(child);
+          const size = bbox.getSize(new THREE.Vector3());
+          const area = Math.max(size.x * size.y, size.y * size.z, size.x * size.z);
+
+          const isFront = n.includes('mainscreenmat1') || mn.includes('mainscreenmat1') || n.includes('plane.001');
+          const isSide = (n.includes('plane.004') || n.includes('mainscreenmat') || mn.includes('mainscreenmat')) && area > 0.4 && !isFront;
+          const isKioskBody = n.includes('kiosk') || n.includes('cabinet') || n.includes('body') || n.includes('cube') || isFront || isSide;
+
+          if (isFront && !frontScreenMesh) {
+            child.material = frontScreenMat;
+            frontScreenMesh = child;
+            child.userData.screenType = 'FRONT';
+          } else if (isSide && !sideScreenMesh) {
+            child.material = sideScreenMat;
+            sideScreenMesh = child;
+            child.userData.screenType = 'SIDE';
+          } else if (isKioskBody) {
+            if (n.includes('side') || n.includes('004')) {
+              child.userData.screenType = 'SIDE';
+            } else {
+              child.userData.screenType = 'FRONT';
+            }
+          }
+
+          if (!isFront && !isSide && child.geometry) {
+            const outline = new THREE.Mesh(child.geometry, outlineMaterial);
+            outline.renderOrder = -1;
+            child.add(outline);
+          }
+
+          clickableObjects.push(child);
+        });
+
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixer = new THREE.AnimationMixer(model);
+          gltf.animations.forEach((clip) => mixer.clipAction(clip).play());
+        }
+
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+
+        defaultOverviewTarget.set(center.x - 0.2, center.y, center.z);
+        defaultOverviewCamPos.set(center.x + 3.8, center.y + 2.0, center.z + 5.2);
+
+        if (frontScreenMesh) {
+          const fBox = new THREE.Box3().setFromObject(frontScreenMesh);
+          const fCenter = fBox.getCenter(new THREE.Vector3());
+          frontLookTarget.set(fCenter.x, fCenter.y - 0.15, fCenter.z);
+
+          const dist = 3.8;
+          frontLookCamPos.copy(fCenter);
+          const fSize = fBox.getSize(new THREE.Vector3());
+          if (fSize.z < fSize.x) {
+            frontLookCamPos.z += (fCenter.z >= center.z ? dist : -dist);
+          } else {
+            frontLookCamPos.x += (fCenter.x >= center.x ? dist : -dist);
+          }
+          frontLookCamPos.y = fCenter.y + 0.3;
+        }
+
+        if (sideScreenMesh) {
+          const sBox = new THREE.Box3().setFromObject(sideScreenMesh);
+          const sCenter = sBox.getCenter(new THREE.Vector3());
+          sideLookTarget.set(sCenter.x, sCenter.y, sCenter.z);
+
+          const dist = 3.2;
+          sideLookCamPos.copy(sCenter);
+          const sSize = sBox.getSize(new THREE.Vector3());
+          if (sSize.x < sSize.z) {
+            sideLookCamPos.x += (sCenter.x >= center.x ? dist : -dist);
+          } else {
+            sideLookCamPos.z += (sCenter.z >= center.z ? dist : -dist);
+          }
+          sideLookCamPos.y = sCenter.y + 0.1;
+        }
+
+        camera.position.copy(defaultOverviewCamPos);
+        controls.target.copy(defaultOverviewTarget);
+        controls.update();
+
+        scene.add(model);
+      },
+      (xhr) => {
+        if (xhr.total > 0) {
+          const p = ((xhr.loaded / xhr.total) * 100).toFixed(0);
+          loadingEl.innerText = `กำลังดาวน์โหลด ${p}%...`;
+        }
+      },
+      () => loadModelStep()
+    );
+  }
+
+  loadModelStep();
+
+  // ---------------------------------------------------------------------------
+  // 11. INTERACTION & NAVIGATION LOGIC
+  // ---------------------------------------------------------------------------
+  function triggerAction() {
+    if (currentScreen === 'MENU') {
+      const selected = menuList[menuSelected];
+      if (selected.state === 'SNAKE') {
+        resetSnake();
+        currentScreen = 'SNAKE';
+      } else if (selected.state === 'EXTRA') {
+        currentScreen = 'EXTRA';
+      } else if (selected.state === 'HOBBIES') {
+        currentScreen = 'HOBBIES';
+      }
+    } else if (currentScreen === 'SNAKE') {
+      if (snakeGameOver) {
+        resetSnake();
+      } else {
+        currentScreen = 'MENU';
+      }
+    } else if (currentScreen === 'EXTRA' || currentScreen === 'HOBBIES') {
+      currentScreen = 'MENU';
+    }
+  }
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  function updateMouse(e) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  window.addEventListener('pointermove', (e) => {
+    updateMouse(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(clickableObjects, true);
+    document.body.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+  });
+
+  let downPos = { x: 0, y: 0 };
+  window.addEventListener('pointerdown', (e) => {
+    downPos.x = e.clientX;
+    downPos.y = e.clientY;
+  });
+
+  window.addEventListener('pointerup', (e) => {
+    const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+    if (dist > 6) return;
+
+    updateMouse(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(clickableObjects, true);
+
+    if (hits.length === 0) {
+      selected_target = defaultOverviewTarget;
+      targetCamPos = defaultOverviewCamPos;
+      return;
+    }
+
+    const hitObj = hits[0].object;
+
+    if (hitObj.userData.screenType === 'SIDE' || hitObj === sideScreenMesh) {
+      selected_target = sideLookTarget;
+      targetCamPos = sideLookCamPos;
+    } else if (hitObj.userData.screenType === 'FRONT' || hitObj === frontScreenMesh) {
+      if (selected_target === frontLookTarget && (hitObj === frontScreenMesh || hitObj.material === frontScreenMat)) {
+        triggerAction();
+      } else {
+        selected_target = frontLookTarget;
+        targetCamPos = frontLookCamPos;
+      }
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (currentScreen !== 'MENU') {
+        currentScreen = 'MENU';
+      } else {
+        selected_target = defaultOverviewTarget;
+        targetCamPos = defaultOverviewCamPos;
+      }
+      e.preventDefault();
+      return;
+    }
+
+    if (currentScreen === 'SNAKE') {
+      if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') {
+        if (snakeDir.y === 0) nextDir = { x: 0, y: -1 };
+        e.preventDefault();
+      } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') {
+        if (snakeDir.y === 0) nextDir = { x: 0, y: 1 };
+        e.preventDefault();
+      } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
+        if (snakeDir.x === 0) nextDir = { x: -1, y: 0 };
+        e.preventDefault();
+      } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
+        if (snakeDir.x === 0) nextDir = { x: 1, y: 0 };
+        e.preventDefault();
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        if (snakeGameOver) resetSnake();
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (currentScreen === 'MENU') {
+      if (e.key === "ArrowDown") {
+        menuSelected = (menuSelected + 1) % menuList.length;
+      } else if (e.key === "ArrowUp") {
+        menuSelected = (menuSelected - 1 + menuList.length) % menuList.length;
+      } else if (e.key === "Enter") {
+        selected_target = frontLookTarget;
+        targetCamPos = frontLookCamPos;
+        triggerAction();
+      }
+    } else if (currentScreen === 'EXTRA' || currentScreen === 'HOBBIES') {
+      if (e.key === "Enter" || e.key === " ") {
+        currentScreen = 'MENU';
+      }
+    }
+  });
+
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   });
 
-  // --- 6. Animation Loop ---
-  function animate() {
+  // ---------------------------------------------------------------------------
+  // 12. ANIMATION LOOP
+  // ---------------------------------------------------------------------------
+  function animate(time) {
+    const delta = clock.getDelta();
+    if (mixer) mixer.update(delta);
+
+    updateLightningSystem(delta);
+
+    renderScreens(time);
+    renderSideScreen(time);
+
+    if (selected_target != null) {
+      controls.target.lerp(selected_target, 0.05);
+
+      if (targetCamPos != null) {
+        camera.position.lerp(targetCamPos, 0.05);
+
+        if (controls.target.distanceTo(selected_target) < 0.02 && 
+            camera.position.distanceTo(targetCamPos) < 0.02) {
+          selected_target = null;
+          targetCamPos = null;
+        }
+      }
+    }
+
     controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
